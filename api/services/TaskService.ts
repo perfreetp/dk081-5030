@@ -20,15 +20,22 @@ export class TaskService {
     if (!task) return null;
 
     const employees = await this.employeeRepository.findByTargetCity(city);
-    return { ...task, employees };
+    const eligibleEmployees = employees.filter(e => 
+      (e.status === 'validated' || e.status === 'in_progress' || e.status === 'completed') 
+      && task.employeeIds.includes(e.id)
+    );
+    return { ...task, employees: eligibleEmployees };
   }
 
   async getTaskById(id: string): Promise<Task & { employees: Employee[] } | null> {
     const task = await this.taskRepository.findById(id);
     if (!task) return null;
 
-    const employees = await this.employeeRepository.findByTargetCity(task.city);
-    return { ...task, employees };
+    const allEmployees = await this.employeeRepository.findByTargetCity(task.city);
+    const eligibleEmployees = allEmployees.filter(e => 
+      task.employeeIds.includes(e.id)
+    );
+    return { ...task, employees: eligibleEmployees };
   }
 
   async splitTasksByCity(): Promise<Task[]> {
@@ -37,14 +44,17 @@ export class TaskService {
 
     for (const city of cities) {
       const employees = await this.employeeRepository.findByTargetCity(city);
-      const validatedEmployees = employees.filter(e => e.status === 'validated');
+      const eligibleEmployees = employees.filter(e => 
+        e.status === 'validated' || e.status === 'in_progress' || e.status === 'completed'
+      );
+      const eligibleIds = eligibleEmployees.map(e => e.id);
       
-      if (validatedEmployees.length > 0) {
+      if (eligibleEmployees.length > 0) {
         let task = await this.taskRepository.findByCity(city);
         if (!task) {
-          task = await this.taskRepository.create(city, validatedEmployees.length);
+          task = await this.taskRepository.create(city, eligibleEmployees.length, eligibleIds);
         } else {
-          task = await this.taskRepository.updateEmployeeCount(task.id, validatedEmployees.length);
+          task = await this.taskRepository.updateEmployeeCount(task.id, eligibleEmployees.length, eligibleIds);
         }
         if (task) {
           tasks.push(task);

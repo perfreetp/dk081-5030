@@ -76,6 +76,8 @@ const Validation: React.FC = () => {
       const response = await employeeApi.validateEmployees(selectedEmployees);
       if (response.code === 200 && response.data) {
         setValidationResults(response.data);
+        await loadData();
+        setSelectedEmployees([]);
       }
     } catch (error) {
       console.error('校验失败', error);
@@ -108,7 +110,8 @@ const Validation: React.FC = () => {
       const response = await employeeApi.validateEmployees(allIds);
       if (response.code === 200 && response.data) {
         setValidationResults(response.data);
-        loadData();
+        await loadData();
+        setSelectedEmployees([]);
       }
     } catch (error) {
       console.error('批量校验失败', error);

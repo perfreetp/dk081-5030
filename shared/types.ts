@@ -28,6 +28,7 @@ export interface Employee {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  completedAt?: string;
   validationResult?: ValidationResult;
   returnReasons?: ReturnReason[];
 }
@@ -60,6 +61,7 @@ export interface Task {
   id: string;
   city: string;
   employeeCount: number;
+  employeeIds: string[];
   deadline?: string;
   status: TaskStatus;
   progress: number;

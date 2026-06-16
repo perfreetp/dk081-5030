@@ -29,13 +29,13 @@ export class StatisticsService {
     const totalProcessed = completed + returned;
     const successRate = totalProcessed > 0 ? Math.round((completed / totalProcessed) * 100) : 0;
 
-    const completedEmployees = db.employees.filter(e => e.status === 'completed');
+    const completedEmployees = db.employees.filter(e => e.status === 'completed' && e.completedAt);
     let averageTime = 0;
     if (completedEmployees.length > 0) {
       const totalDays = completedEmployees.reduce((sum, e) => {
         const created = new Date(e.createdAt);
-        const updated = new Date(e.updatedAt);
-        return sum + Math.ceil((updated.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+        const completed = new Date(e.completedAt!);
+        return sum + Math.ceil((completed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
       }, 0);
       averageTime = Math.round(totalDays / completedEmployees.length);
     }
@@ -187,11 +187,21 @@ export class StatisticsService {
         continue;
       }
 
-      const daysList = cityEmployees.map(e => {
-        const created = new Date(e.createdAt);
-        const updated = new Date(e.updatedAt);
-        return Math.ceil((updated.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
-      });
+      const daysList = cityEmployees
+        .filter(e => e.completedAt)
+        .map(e => {
+          const created = new Date(e.createdAt);
+          const completed = new Date(e.completedAt!);
+          return Math.ceil((completed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+        });
+
+      if (daysList.length === 0) {
+        result.push({
+          city,
+          days: 0,
+        });
+        continue;
+      }
 
       const days = Math.round(daysList.reduce((a, b) => a + b, 0) / daysList.length);
 

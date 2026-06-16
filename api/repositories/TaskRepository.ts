@@ -38,7 +38,7 @@ export class TaskRepository {
     return db.tasks.find(t => t.city === city) || null;
   }
 
-  async create(city: string, employeeCount: number = 0): Promise<Task> {
+  async create(city: string, employeeCount: number = 0, employeeIds: string[] = []): Promise<Task> {
     const db = getDb();
     const now = new Date().toISOString();
     const deadline = new Date();
@@ -51,6 +51,7 @@ export class TaskRepository {
       id: uuidv4(),
       city,
       employeeCount,
+      employeeIds,
       deadline: deadline.toISOString().split('T')[0],
       status: 'pending',
       progress: 0,
@@ -87,8 +88,12 @@ export class TaskRepository {
     return this.update(id, { progress: Math.min(100, Math.max(0, progress)) });
   }
 
-  async updateEmployeeCount(id: string, count: number): Promise<Task | null> {
-    return this.update(id, { employeeCount: count });
+  async updateEmployeeCount(id: string, count: number, employeeIds?: string[]): Promise<Task | null> {
+    const data: Partial<Task> = { employeeCount: count };
+    if (employeeIds) {
+      data.employeeIds = employeeIds;
+    }
+    return this.update(id, data);
   }
 
   async getMaterials(taskId: string): Promise<MaterialItem[]> {
@@ -106,19 +111,41 @@ export class TaskRepository {
     const task = db.tasks.find(t => t.id === taskId);
     if (!task || !task.timeline[timelineIndex]) return null;
 
+    const wasCompleted = task.progress === 100;
+
     task.timeline[timelineIndex].completed = completed;
     task.timeline[timelineIndex].dueDate = completed ? new Date().toISOString().split('T')[0] : '';
     
     const completedCount = task.timeline.filter(t => t.completed).length;
     task.progress = Math.round((completedCount / task.timeline.length) * 100);
     
+    const now = new Date().toISOString();
     if (task.progress === 100) {
       task.status = 'completed';
+      if (!wasCompleted && task.employeeIds && task.employeeIds.length > 0) {
+        task.employeeIds.forEach(empId => {
+          const emp = db.employees.find(e => e.id === empId);
+          if (emp) {
+            emp.status = 'completed';
+            emp.completedAt = now;
+            emp.updatedAt = now;
+          }
+        });
+      }
     } else if (completedCount > 0) {
       task.status = 'in_progress';
+      if (task.employeeIds && task.employeeIds.length > 0) {
+        task.employeeIds.forEach(empId => {
+          const emp = db.employees.find(e => e.id === empId);
+          if (emp && emp.status === 'validated') {
+            emp.status = 'in_progress';
+            emp.updatedAt = now;
+          }
+        });
+      }
     }
     
-    task.updatedAt = new Date().toISOString();
+    task.updatedAt = now;
     persistDb(db);
     return task.timeline;
   }

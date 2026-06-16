@@ -16,6 +16,7 @@ export interface Database {
   validationResults: ValidationResult[];
   tasks: Task[];
   returnRecords: ReturnReason[];
+  documents: any[];
 }
 
 const defaultData: Database = {
@@ -38,7 +39,8 @@ const defaultData: Database = {
   employees: [],
   validationResults: [],
   tasks: [],
-  returnRecords: []
+  returnRecords: [],
+  documents: []
 };
 
 let dbCache: Database | null = null;
@@ -66,6 +68,11 @@ const loadData = (): Database => {
       fs.writeFileSync(dataFilePath, JSON.stringify(defaultData, null, 2), 'utf8');
       return JSON.parse(JSON.stringify(defaultData));
     }
+
+    if (!data.documents) data.documents = [];
+    if (!data.validationResults) data.validationResults = [];
+    if (!data.tasks) data.tasks = [];
+    if (!data.returnRecords) data.returnRecords = [];
     
     return data;
   } catch (error) {
