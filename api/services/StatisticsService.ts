@@ -152,26 +152,36 @@ export class StatisticsService {
     const cities = city ? [city] : allCities;
     const result: SuccessRateData[] = [];
 
+    let allReturnRecords = [...db.returnRecords];
+    if (startDate) {
+      const start = new Date(startDate);
+      allReturnRecords = allReturnRecords.filter(r => new Date(r.markedAt) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      allReturnRecords = allReturnRecords.filter(r => new Date(r.markedAt) <= end);
+    }
+
     for (const c of cities) {
       let cityEmployees = db.employees.filter(e => e.targetCity === c);
-
       let completedEmps = cityEmployees.filter(e => e.status === 'completed');
-      let returnedEmps = cityEmployees.filter(e => e.status === 'returned');
 
       if (startDate) {
         const start = new Date(startDate);
         completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) >= start);
-        returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) >= start);
       }
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
         completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) <= end);
-        returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) <= end);
       }
 
+      const cityEmployeeIds = cityEmployees.map(e => e.id);
+      const cityReturnRecords = allReturnRecords.filter(r => cityEmployeeIds.includes(r.employeeId));
+
       const successCount = completedEmps.length;
-      const failCount = returnedEmps.length;
+      const failCount = cityReturnRecords.length;
       const total = successCount + failCount;
       const rate = total > 0 ? Math.round((successCount / total) * 100) : 0;
 
@@ -279,27 +289,39 @@ export class StatisticsService {
     const db = (await import('../config/database.js')).getDb();
 
     let completedEmps = db.employees.filter(e => e.status === 'completed');
-    let returnedEmps = db.employees.filter(e => e.status === 'returned');
+    let allEmployees = [...db.employees];
 
     if (city) {
       completedEmps = completedEmps.filter(e => e.targetCity === city);
-      returnedEmps = returnedEmps.filter(e => e.targetCity === city);
+      allEmployees = allEmployees.filter(e => e.targetCity === city);
     }
 
     if (startDate) {
       const start = new Date(startDate);
       completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) >= start);
-      returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) >= start);
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
       completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) <= end);
-      returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) <= end);
+    }
+
+    let filteredReturnRecords = [...db.returnRecords];
+    if (city) {
+      const cityEmpIds = allEmployees.map(e => e.id);
+      filteredReturnRecords = filteredReturnRecords.filter(r => cityEmpIds.includes(r.employeeId));
+    }
+    if (startDate) {
+      filteredReturnRecords = filteredReturnRecords.filter(r => new Date(r.markedAt) >= new Date(startDate));
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filteredReturnRecords = filteredReturnRecords.filter(r => new Date(r.markedAt) <= end);
     }
 
     const totalCompleted = completedEmps.length;
-    const totalReturned = returnedEmps.length;
+    const totalReturned = filteredReturnRecords.length;
     const totalProcessed = totalCompleted + totalReturned;
     const successRate = totalProcessed > 0 ? Math.round((totalCompleted / totalProcessed) * 100) : 0;
 
@@ -312,35 +334,46 @@ export class StatisticsService {
       averageDays = Math.round(totalDays / completedWithDays.length);
     }
 
-    const returnRecords = [...db.returnRecords];
-    const returnDetailList = returnedEmps.map(e => {
-      const reasons = returnRecords.filter(r => r.employeeId === e.id);
+    const returnDetailList = filteredReturnRecords.map(r => {
+      const emp = db.employees.find(e => e.id === r.employeeId);
       return {
-        name: e.name,
-        idCard: e.idCard,
-        targetCity: e.targetCity,
-        employeeType: e.employeeType,
-        returnedAt: e.updatedAt,
-        reasons: reasons.map(r => r.reason).join('；')
+        name: emp?.name || '未知',
+        idCard: emp?.idCard || '',
+        targetCity: emp?.targetCity || '',
+        employeeType: emp?.employeeType || '' as any,
+        returnedAt: r.markedAt,
+        reasons: r.reason,
+        markedBy: r.markedBy,
+        category: r.category
       };
     });
 
-    const cityMap = new Map<string, { completed: number; returned: number }>();
-    [...completedEmps, ...returnedEmps].forEach(e => {
-      const entry = cityMap.get(e.targetCity) || { completed: 0, returned: 0 };
-      if (e.status === 'completed') entry.completed++;
-      else entry.returned++;
-      cityMap.set(e.targetCity, entry);
+    const completedByCity = new Map<string, number>();
+    completedEmps.forEach(e => {
+      completedByCity.set(e.targetCity, (completedByCity.get(e.targetCity) || 0) + 1);
     });
-    const cityStats = Array.from(cityMap.entries()).map(([city, data]) => ({
-      city,
-      completed: data.completed,
-      returned: data.returned,
-      total: data.completed + data.returned,
-      rate: data.completed + data.returned > 0
-        ? Math.round((data.completed / (data.completed + data.returned)) * 100)
-        : 0
-    }));
+    const returnedByCity = new Map<string, number>();
+    filteredReturnRecords.forEach(r => {
+      const emp = db.employees.find(e => e.id === r.employeeId);
+      if (emp) {
+        returnedByCity.set(emp.targetCity, (returnedByCity.get(emp.targetCity) || 0) + 1);
+      }
+    });
+    const allCitySet = new Set<string>();
+    completedByCity.forEach((_v, k) => allCitySet.add(k));
+    returnedByCity.forEach((_v, k) => allCitySet.add(k));
+    const cityStats = Array.from(allCitySet).map(c => {
+      const completed = completedByCity.get(c) || 0;
+      const returned = returnedByCity.get(c) || 0;
+      const total = completed + returned;
+      return {
+        city: c,
+        completed,
+        returned,
+        total,
+        rate: total > 0 ? Math.round((completed / total) * 100) : 0
+      };
+    }).sort((a, b) => b.rate - a.rate);
 
     const allMaterialTasks = db.tasks.filter(t => {
       if (city && t.city !== city) return false;
@@ -367,26 +400,57 @@ export class StatisticsService {
       .map(([name, count]) => ({ materialName: name, missingCount: count }))
       .sort((a, b) => b.missingCount - a.missingCount);
 
+    const materialDeficiencyByCity: { city: string; missingMaterials: string }[] = [];
+    const byCityMaterial = new Map<string, string[]>();
+    materialDeficiency.filter(m => m.required).forEach(m => {
+      const arr = byCityMaterial.get(m.taskCity) || [];
+      if (!arr.includes(m.materialName)) arr.push(m.materialName);
+      byCityMaterial.set(m.taskCity, arr);
+    });
+    byCityMaterial.forEach((mats, c) => {
+      materialDeficiencyByCity.push({ city: c, missingMaterials: mats.join('；') });
+    });
+
+    const now = new Date();
+    const overtimeTasks = allMaterialTasks
+      .filter(t => t.status !== 'completed' && t.deadline && new Date(t.deadline) < now)
+      .map(t => {
+        const daysOverdue = Math.ceil((now.getTime() - new Date(t.deadline!).getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          city: t.city,
+          employeeCount: t.employeeCount,
+          progress: t.progress,
+          deadline: t.deadline,
+          daysOverdue
+        };
+      })
+      .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
     const reasonMap = new Map<string, number>();
-    let filteredReturnRecords = returnRecords;
-    if (city) {
-      const cityEmpIds = [...completedEmps, ...returnedEmps].map(e => e.id);
-      filteredReturnRecords = filteredReturnRecords.filter(r => cityEmpIds.includes(r.employeeId));
-    }
-    if (startDate) {
-      filteredReturnRecords = filteredReturnRecords.filter(r => new Date(r.markedAt) >= new Date(startDate));
-    }
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      filteredReturnRecords = filteredReturnRecords.filter(r => new Date(r.markedAt) <= end);
-    }
     filteredReturnRecords.forEach(r => {
       reasonMap.set(r.reason, (reasonMap.get(r.reason) || 0) + 1);
     });
     const rejectionReasons = Array.from(reasonMap.entries())
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count);
+
+    const suggestions: string[] = [];
+    if (overtimeTasks.length > 0) {
+      suggestions.push(`⚠️ 有 ${overtimeTasks.length} 个任务已超期，建议优先跟进 ${overtimeTasks.slice(0, 3).map(t => t.city).join('、')}`);
+    }
+    if (materialDeficiencyList.length > 0) {
+      suggestions.push(`📋 待补材料高频项：${materialDeficiencyList.slice(0, 3).map(m => m.materialName).join('、')}，建议批量催办`);
+    }
+    if (rejectionReasons.length > 0) {
+      suggestions.push(`📌 主要退件原因：${rejectionReasons.slice(0, 3).map(r => r.reason).join('、')}，建议培训相关经办`);
+    }
+    const lowSuccess = cityStats.filter(c => c.total >= 3 && c.rate < 80);
+    if (lowSuccess.length > 0) {
+      suggestions.push(`🔴 低成功率城市：${lowSuccess.map(c => c.city + `(${c.rate}%)`).join('、')}，需重点复盘`);
+    }
+    if (suggestions.length === 0) {
+      suggestions.push('✅ 整体指标良好，建议继续保持现有节奏');
+    }
 
     return {
       summary: {
@@ -399,7 +463,10 @@ export class StatisticsService {
       cityStats,
       returnDetailList,
       rejectionReasons,
-      materialDeficiencyList
+      materialDeficiencyList,
+      materialDeficiencyByCity,
+      overtimeTasks,
+      suggestions
     };
   }
 }

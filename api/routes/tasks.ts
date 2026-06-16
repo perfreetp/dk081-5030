@@ -1,10 +1,28 @@
 import { Router } from 'express';
 import { TaskService } from '../services/TaskService.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
-import type { ApiResponse } from '../../shared/types.js';
+import type { ApiResponse, CollaborationAttachment } from '../../shared/types.js';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 const taskService = new TaskService();
+
+const UPLOAD_DIR = path.join(process.cwd(), 'storage', 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}_${uuidv4()}${ext}`);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
@@ -258,30 +276,59 @@ router.get('/:id/collaboration', authMiddleware, async (req: AuthRequest, res) =
   }
 });
 
-router.post('/:id/collaboration', authMiddleware, async (req: AuthRequest, res) => {
+router.post('/:id/collaboration', authMiddleware, upload.single('attachment'), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { type, content } = req.body;
-    
-    if (!type || !content) {
+    const { type, content, communicationTime, counterpart } = req.body;
+
+    if (!type) {
       return res.status(400).json({
         code: 400,
-        message: '类型和内容不能为空',
+        message: '类型不能为空',
+        data: null
+      } as ApiResponse);
+    }
+    if (!content && !req.file) {
+      return res.status(400).json({
+        code: 400,
+        message: '内容或附件至少一项不能为空',
         data: null
       } as ApiResponse);
     }
 
     const createdBy = req.user?.name || '未知';
-    const record = await taskService.addCollaborationRecord(id, type, content, createdBy);
-    
+
+    let attachment: CollaborationAttachment | undefined;
+    if (req.file) {
+      attachment = {
+        id: uuidv4(),
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: createdBy
+      };
+    }
+
+    const extra: { attachment?: CollaborationAttachment; communicationTime?: string; counterpart?: string } = {};
+    if (attachment) extra.attachment = attachment;
+    if (communicationTime) extra.communicationTime = communicationTime;
+    if (counterpart) extra.counterpart = counterpart;
+
+    const record = await taskService.addCollaborationRecord(id, type, content || '', createdBy, extra);
+
     if (!record) {
+      if (attachment) {
+        try { fs.unlinkSync(path.join(UPLOAD_DIR, attachment.filename)); } catch (_e) { /* ignore */ }
+      }
       return res.status(404).json({
         code: 404,
         message: '任务不存在',
         data: null
       } as ApiResponse);
     }
-    
+
     res.json({
       code: 200,
       message: '添加成功',
@@ -292,6 +339,47 @@ router.post('/:id/collaboration', authMiddleware, async (req: AuthRequest, res) 
     res.status(500).json({
       code: 500,
       message: '服务器内部错误',
+      data: null
+    } as ApiResponse);
+  }
+});
+
+router.get('/collaboration/download/:filename', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { filename } = req.params;
+    const safeName = path.basename(filename);
+    const filePath = path.join(UPLOAD_DIR, safeName);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        code: 404,
+        message: '文件不存在',
+        data: null
+      } as ApiResponse);
+    }
+
+    const db = (await import('../config/database.js')).getDb();
+    let found = false;
+    for (const t of db.tasks) {
+      if (t.collaborationRecords?.some((r: any) => r.attachment?.filename === safeName)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      return res.status(403).json({
+        code: 403,
+        message: '无权访问',
+        data: null
+      } as ApiResponse);
+    }
+
+    res.download(filePath);
+  } catch (error) {
+    console.error('Download collaboration attachment error:', error);
+    res.status(500).json({
+      code: 500,
+      message: '下载失败',
       data: null
     } as ApiResponse);
   }

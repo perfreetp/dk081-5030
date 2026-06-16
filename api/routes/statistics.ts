@@ -117,18 +117,20 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res) => {
 
     if (exportData.returnDetailList.length > 0) {
       const returnData = [
-        ['姓名', '身份证号', '转入城市', '人员类型', '退件日期', '退件原因'],
+        ['姓名', '身份证号', '转入城市', '人员类型', '退件日期', '退件原因', '经办人类别', '标记人'],
         ...exportData.returnDetailList.map(r => [
           r.name,
           r.idCard,
           r.targetCity,
           r.employeeType === 'resignation' ? '离职' : r.employeeType === 'transfer' ? '调岗' : '挂靠',
           r.returnedAt ? new Date(r.returnedAt).toLocaleDateString('zh-CN') : '',
-          r.reasons
+          r.reasons,
+          (r as any).category || '',
+          (r as any).markedBy || ''
         ])
       ];
       const ws3 = XLSX.utils.aoa_to_sheet(returnData);
-      ws3['!cols'] = [{ wch: 10 }, { wch: 22 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 40 }];
+      ws3['!cols'] = [{ wch: 10 }, { wch: 22 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 40 }, { wch: 12 }, { wch: 12 }];
       XLSX.utils.book_append_sheet(wb, ws3, '退件明细');
     }
 
@@ -142,14 +144,50 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res) => {
       XLSX.utils.book_append_sheet(wb, ws4, '退件原因');
     }
 
+    if ((exportData.materialDeficiencyByCity as any).length > 0) {
+      const cityMatData = [
+        ['城市', '待补材料清单'],
+        ...(exportData.materialDeficiencyByCity as any).map((m: any) => [m.city, m.missingMaterials])
+      ];
+      const ws5 = XLSX.utils.aoa_to_sheet(cityMatData);
+      ws5['!cols'] = [{ wch: 12 }, { wch: 60 }];
+      XLSX.utils.book_append_sheet(wb, ws5, '城市待补材料');
+    }
+
     if (exportData.materialDeficiencyList.length > 0) {
       const matData = [
         ['缺失材料', '涉及任务数'],
         ...exportData.materialDeficiencyList.map(m => [m.materialName, m.missingCount])
       ];
-      const ws5 = XLSX.utils.aoa_to_sheet(matData);
-      ws5['!cols'] = [{ wch: 20 }, { wch: 12 }];
-      XLSX.utils.book_append_sheet(wb, ws5, '材料缺失汇总');
+      const ws6 = XLSX.utils.aoa_to_sheet(matData);
+      ws6['!cols'] = [{ wch: 20 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws6, '材料缺失汇总');
+    }
+
+    if ((exportData.overtimeTasks as any).length > 0) {
+      const overData = [
+        ['城市', '人数', '当前进度%', '截止日期', '超期天数'],
+        ...(exportData.overtimeTasks as any).map((t: any) => [
+          t.city,
+          t.employeeCount,
+          t.progress,
+          t.deadline,
+          t.daysOverdue
+        ])
+      ];
+      const ws7 = XLSX.utils.aoa_to_sheet(overData);
+      ws7['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws7, '超时任务清单');
+    }
+
+    if (exportData.suggestions && (exportData.suggestions as any).length > 0) {
+      const sugData = [
+        ['序号', '下一步建议'],
+        ...(exportData.suggestions as any).map((s: string, i: number) => [i + 1, s])
+      ];
+      const ws8 = XLSX.utils.aoa_to_sheet(sugData);
+      ws8['!cols'] = [{ wch: 6 }, { wch: 80 }];
+      XLSX.utils.book_append_sheet(wb, ws8, '下一步建议');
     }
 
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

@@ -75,12 +75,28 @@ export const taskApi = {
     });
   },
 
-  addCollaborationRecord: (id: string, type: CollaborationRecord['type'], content: string) => {
+  addCollaborationRecord: (
+    id: string,
+    type: CollaborationRecord['type'],
+    data: { content?: string; file?: File; communicationTime?: string; counterpart?: string }
+  ) => {
+    const form = new FormData();
+    form.append('type', type);
+    if (data.content) form.append('content', data.content);
+    if (data.file) form.append('attachment', data.file);
+    if (data.communicationTime) form.append('communicationTime', data.communicationTime);
+    if (data.counterpart) form.append('counterpart', data.counterpart);
     return request<CollaborationRecord>({
       url: `/tasks/${id}/collaboration`,
       method: 'post',
-      data: { type, content }
+      data: form,
+      headers: {}
     });
+  },
+
+  getCollaborationAttachmentUrl: (filename: string) => {
+    const token = localStorage.getItem('token') || '';
+    return `/api/tasks/collaboration/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
   },
 
   deleteCollaborationRecord: (id: string, recordId: string) => {

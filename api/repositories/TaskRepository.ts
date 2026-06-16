@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, persistDb } from '../config/database.js';
-import type { Task, TaskStatus, MaterialItem, TimelineItem, CollaborationRecord } from '../../shared/types.js';
+import type { Task, TaskStatus, MaterialItem, TimelineItem, CollaborationRecord, CollaborationAttachment } from '../../shared/types.js';
 
 const CITY_MATERIALS: Record<string, MaterialItem[]> = {
   'default': [
@@ -225,7 +225,11 @@ export class TaskRepository {
     return true;
   }
 
-  async addCollaborationRecord(taskId: string, type: CollaborationRecord['type'], content: string, createdBy: string): Promise<CollaborationRecord | null> {
+  async addCollaborationRecord(taskId: string, type: CollaborationRecord['type'], content: string, createdBy: string, extra?: {
+    attachment?: CollaborationAttachment;
+    communicationTime?: string;
+    counterpart?: string;
+  }): Promise<CollaborationRecord | null> {
     const db = getDb();
     const task = db.tasks.find(t => t.id === taskId);
     if (!task) return null;
@@ -240,7 +244,10 @@ export class TaskRepository {
       type,
       content,
       createdBy,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...(extra?.attachment && { attachment: extra.attachment }),
+      ...(extra?.communicationTime && { communicationTime: extra.communicationTime }),
+      ...(extra?.counterpart && { counterpart: extra.counterpart })
     };
 
     task.collaborationRecords.push(record);

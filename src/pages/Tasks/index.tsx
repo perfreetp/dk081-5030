@@ -17,6 +17,9 @@ const Tasks: React.FC = () => {
   const [splitting, setSplitting] = useState(false);
   const [newRecordType, setNewRecordType] = useState<CollaborationRecord['type']>('note');
   const [newRecordContent, setNewRecordContent] = useState('');
+  const [newRecordFile, setNewRecordFile] = useState<File | null>(null);
+  const [newRecordCommTime, setNewRecordCommTime] = useState('');
+  const [newRecordCounterpart, setNewRecordCounterpart] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -74,6 +77,9 @@ const Tasks: React.FC = () => {
       }
       setNewRecordType('note');
       setNewRecordContent('');
+      setNewRecordFile(null);
+      setNewRecordCommTime('');
+      setNewRecordCounterpart('');
       setShowDetailModal(true);
     } catch (error) {
       console.error('加载任务详情失败', error);
@@ -143,11 +149,20 @@ const Tasks: React.FC = () => {
   };
 
   const handleAddCollaborationRecord = async () => {
-    if (!selectedTask || !newRecordContent.trim()) return;
+    if (!selectedTask) return;
+    if (!newRecordContent.trim() && !newRecordFile) return;
     try {
-      const res = await taskApi.addCollaborationRecord(selectedTask.id, newRecordType, newRecordContent.trim());
+      const res = await taskApi.addCollaborationRecord(selectedTask.id, newRecordType, {
+        content: newRecordContent.trim() || undefined,
+        file: newRecordFile || undefined,
+        communicationTime: newRecordType === 'communication' && newRecordCommTime ? newRecordCommTime : undefined,
+        counterpart: newRecordType === 'communication' && newRecordCounterpart ? newRecordCounterpart : undefined
+      });
       if (res.code === 200) {
         setNewRecordContent('');
+        setNewRecordFile(null);
+        setNewRecordCommTime('');
+        setNewRecordCounterpart('');
         const collabRes = await taskApi.getCollaborationRecords(selectedTask.id);
         if (collabRes.code === 200 && collabRes.data) {
           setCollaborationRecords(collabRes.data);
@@ -444,8 +459,8 @@ const Tasks: React.FC = () => {
 
             <div className="border-t border-neutral-200 pt-6">
               <h4 className="font-semibold text-neutral-800 mb-4">💬 协作记录</h4>
-              <div className="mb-4">
-                <div className="flex gap-3 mb-3">
+              <div className="mb-4 space-y-3">
+                <div className="flex gap-3">
                   {(['note', 'supplement', 'communication'] as const).map(type => (
                     <button
                       key={type}
@@ -460,39 +475,87 @@ const Tasks: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <div className="flex gap-3">
-                  <textarea
-                    value={newRecordContent}
-                    onChange={(e) => setNewRecordContent(e.target.value)}
-                    placeholder={
-                      newRecordType === 'note' ? '输入备注内容...' :
-                      newRecordType === 'supplement' ? '输入补充说明...' :
-                      '记录与经办机构的沟通内容...'
-                    }
-                    className="input flex-1 min-h-[60px] resize-y"
-                    rows={2}
-                  />
+                {newRecordType === 'communication' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="input-label">实际沟通时间</label>
+                      <input
+                        type="datetime-local"
+                        className="input"
+                        value={newRecordCommTime}
+                        onChange={(e) => setNewRecordCommTime(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="input-label">对接机构</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="如：杭州社保局"
+                        value={newRecordCounterpart}
+                        onChange={(e) => setNewRecordCounterpart(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+                <textarea
+                  value={newRecordContent}
+                  onChange={(e) => setNewRecordContent(e.target.value)}
+                  placeholder={
+                    newRecordType === 'note' ? '输入备注内容...' :
+                    newRecordType === 'supplement' ? '输入补充说明（可上传附件）...' :
+                    '记录与经办机构的沟通内容...'
+                  }
+                  className="input w-full min-h-[60px] resize-y"
+                  rows={2}
+                />
+                {newRecordType === 'supplement' && (
+                  <div>
+                    <label className="input-label">上传附件（可选）</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="file"
+                        className="input w-full py-2"
+                        onChange={(e) => setNewRecordFile(e.target.files?.[0] || null)}
+                      />
+                      {newRecordFile && (
+                        <span className="text-sm text-neutral-600 whitespace-nowrap">
+                          📎 {newRecordFile.name} ({(newRecordFile.size / 1024).toFixed(1)}KB)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end">
                   <button
                     onClick={handleAddCollaborationRecord}
-                    disabled={!newRecordContent.trim()}
-                    className="btn-primary self-end"
+                    disabled={!newRecordContent.trim() && !newRecordFile}
+                    className="btn-primary"
                   >
-                    添加
+                    添加记录
                   </button>
                 </div>
               </div>
               {collaborationRecords.length > 0 ? (
-                <div className="space-y-3 max-h-64 overflow-y-auto">
+                <div className="space-y-3 max-h-80 overflow-y-auto">
                   {collaborationRecords.map(record => {
                     const config = recordTypeConfig[record.type];
                     return (
                       <div key={record.id} className="p-3 bg-neutral-50 rounded-lg border border-neutral-200">
                         <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center flex-wrap gap-2">
                             <span>{config.icon}</span>
                             <span className={`badge ${config.color}`}>{config.label}</span>
+                            {record.communicationTime && (
+                              <span className="text-xs text-neutral-500">
+                                🕒 沟通时间：{new Date(record.communicationTime).toLocaleString('zh-CN')}
+                              </span>
+                            )}
+                            {record.counterpart && (
+                              <span className="text-xs text-neutral-500">🏛️ 对接：{record.counterpart}</span>
+                            )}
                             <span className="text-xs text-neutral-500">
-                              {new Date(record.createdAt).toLocaleString('zh-CN')}
+                              记录于 {new Date(record.createdAt).toLocaleString('zh-CN')}
                             </span>
                           </div>
                           <button
@@ -502,7 +565,25 @@ const Tasks: React.FC = () => {
                             ✕
                           </button>
                         </div>
-                        <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap">{record.content}</p>
+                        {record.content && (
+                          <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap">{record.content}</p>
+                        )}
+                        {record.attachment && (
+                          <div className="mt-2 flex items-center gap-2 p-2 bg-white rounded border border-neutral-200 w-fit">
+                            <span className="text-lg">📎</span>
+                            <a
+                              href={taskApi.getCollaborationAttachmentUrl(record.attachment.filename)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm text-primary-600 hover:text-primary-700 hover:underline"
+                            >
+                              {record.attachment.originalName}
+                            </a>
+                            <span className="text-xs text-neutral-400">
+                              ({(record.attachment.size / 1024).toFixed(1)}KB · {record.attachment.uploadedBy})
+                            </span>
+                          </div>
+                        )}
                         <p className="mt-1 text-xs text-neutral-400">by {record.createdBy}</p>
                       </div>
                     );

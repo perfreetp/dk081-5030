@@ -93,6 +93,19 @@ export interface CollaborationRecord {
   content: string;
   createdBy: string;
   createdAt: string;
+  attachment?: CollaborationAttachment;
+  communicationTime?: string;
+  counterpart?: string;
+}
+
+export interface CollaborationAttachment {
+  id: string;
+  filename: string;
+  originalName: string;
+  size: number;
+  mimetype: string;
+  uploadedAt: string;
+  uploadedBy: string;
 }
 
 export interface SuccessRateData {
