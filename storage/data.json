@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "id": "user_001",
+      "username": "admin",
+      "name": "系统管理员",
+      "role": "admin",
+      "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+    },
+    {
+      "id": "user_002",
+      "username": "hr_user",
+      "name": "人事专员",
+      "role": "hr",
+      "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+    }
+  ],
+  "employees": [],
+  "validationResults": [],
+  "tasks": [],
+  "returnRecords": []
+}

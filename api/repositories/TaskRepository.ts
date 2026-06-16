@@ -1,0 +1,142 @@
+import { v4 as uuidv4 } from 'uuid';
+import { getDb, persistDb } from '../config/database.js';
+import type { Task, TaskStatus, MaterialItem, TimelineItem } from '../../shared/types.js';
+
+const CITY_MATERIALS: Record<string, MaterialItem[]> = {
+  'default': [
+    { name: '身份证复印件', optional: false, collected: false, description: '本人身份证正反面复印件' },
+    { name: '户口簿复印件', optional: false, collected: false, description: '户口簿首页及本人页复印件' },
+    { name: '社保缴费证明', optional: false, collected: false, description: '原参保地社保机构出具的缴费证明' },
+    { name: '劳动合同', optional: true, collected: false, description: '与新单位签订的劳动合同' },
+    { name: '单位证明', optional: false, collected: false, description: '原工作单位出具的离职证明或调岗证明' }
+  ]
+};
+
+const CITY_TIMELINES: Record<string, TimelineItem[]> = {
+  'default': [
+    { name: '提交申请', dueDate: '', description: '向转入地社保机构提交转移申请', completed: false },
+    { name: '审核受理', dueDate: '', description: '转入地社保机构审核并受理', completed: false },
+    { name: '联系原参保地', dueDate: '', description: '转入地社保机构联系原参保地社保机构', completed: false },
+    { name: '资金转移', dueDate: '', description: '原参保地社保机构转移个人账户资金', completed: false },
+    { name: '办结确认', dueDate: '', description: '转入地社保机构确认办结并通知申请人', completed: false }
+  ]
+};
+
+export class TaskRepository {
+  async findAll(): Promise<Task[]> {
+    const db = getDb();
+    return [...db.tasks].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async findById(id: string): Promise<Task | null> {
+    const db = getDb();
+    return db.tasks.find(t => t.id === id) || null;
+  }
+
+  async findByCity(city: string): Promise<Task | null> {
+    const db = getDb();
+    return db.tasks.find(t => t.city === city) || null;
+  }
+
+  async create(city: string, employeeCount: number = 0): Promise<Task> {
+    const db = getDb();
+    const now = new Date().toISOString();
+    const deadline = new Date();
+    deadline.setDate(deadline.getDate() + 30);
+
+    const materials = CITY_MATERIALS[city] || CITY_MATERIALS['default'];
+    const timeline = CITY_TIMELINES[city] || CITY_TIMELINES['default'];
+
+    const task: Task = {
+      id: uuidv4(),
+      city,
+      employeeCount,
+      deadline: deadline.toISOString().split('T')[0],
+      status: 'pending',
+      progress: 0,
+      materials,
+      timeline: timeline.map(item => ({ ...item })),
+      createdAt: now,
+      updatedAt: now
+    };
+
+    db.tasks.push(task);
+    persistDb(db);
+    return task;
+  }
+
+  async update(id: string, data: Partial<Task>): Promise<Task | null> {
+    const db = getDb();
+    const index = db.tasks.findIndex(t => t.id === id);
+    if (index === -1) return null;
+
+    db.tasks[index] = { 
+      ...db.tasks[index], 
+      ...data, 
+      updatedAt: new Date().toISOString() 
+    };
+    persistDb(db);
+    return db.tasks[index];
+  }
+
+  async updateStatus(id: string, status: TaskStatus): Promise<Task | null> {
+    return this.update(id, { status });
+  }
+
+  async updateProgress(id: string, progress: number): Promise<Task | null> {
+    return this.update(id, { progress: Math.min(100, Math.max(0, progress)) });
+  }
+
+  async updateEmployeeCount(id: string, count: number): Promise<Task | null> {
+    return this.update(id, { employeeCount: count });
+  }
+
+  async getMaterials(taskId: string): Promise<MaterialItem[]> {
+    const task = await this.findById(taskId);
+    return task?.materials || [];
+  }
+
+  async getTimeline(taskId: string): Promise<TimelineItem[]> {
+    const task = await this.findById(taskId);
+    return task?.timeline || [];
+  }
+
+  async updateTimeline(taskId: string, timelineIndex: number, completed: boolean): Promise<TimelineItem[] | null> {
+    const db = getDb();
+    const task = db.tasks.find(t => t.id === taskId);
+    if (!task || !task.timeline[timelineIndex]) return null;
+
+    task.timeline[timelineIndex].completed = completed;
+    task.timeline[timelineIndex].dueDate = completed ? new Date().toISOString().split('T')[0] : '';
+    
+    const completedCount = task.timeline.filter(t => t.completed).length;
+    task.progress = Math.round((completedCount / task.timeline.length) * 100);
+    
+    if (task.progress === 100) {
+      task.status = 'completed';
+    } else if (completedCount > 0) {
+      task.status = 'in_progress';
+    }
+    
+    task.updatedAt = new Date().toISOString();
+    persistDb(db);
+    return task.timeline;
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const db = getDb();
+    const index = db.tasks.findIndex(t => t.id === id);
+    if (index === -1) return false;
+    db.tasks.splice(index, 1);
+    persistDb(db);
+    return true;
+  }
+
+  async getOrCreateByCity(city: string): Promise<Task> {
+    let task = await this.findByCity(city);
+    if (!task) {
+      task = await this.create(city);
+    }
+    return task;
+  }
+}
