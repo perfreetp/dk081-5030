@@ -67,6 +67,7 @@ export interface Task {
   progress: number;
   materials: MaterialItem[];
   timeline: TimelineItem[];
+  collaborationRecords: CollaborationRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -83,6 +84,15 @@ export interface TimelineItem {
   dueDate: string;
   description: string;
   completed: boolean;
+}
+
+export interface CollaborationRecord {
+  id: string;
+  taskId: string;
+  type: 'note' | 'supplement' | 'communication';
+  content: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface SuccessRateData {

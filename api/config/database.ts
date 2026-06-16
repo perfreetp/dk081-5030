@@ -74,6 +74,13 @@ const loadData = (): Database => {
     if (!data.tasks) data.tasks = [];
     if (!data.returnRecords) data.returnRecords = [];
     
+    if (data.tasks) {
+      data.tasks.forEach((task: any) => {
+        if (!task.collaborationRecords) task.collaborationRecords = [];
+        if (!task.employeeIds) task.employeeIds = [];
+      });
+    }
+    
     return data;
   } catch (error) {
     console.error('Error loading database, using default data:', error);

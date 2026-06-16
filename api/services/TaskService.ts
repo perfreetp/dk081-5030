@@ -1,6 +1,6 @@
 import { TaskRepository } from '../repositories/TaskRepository.js';
 import { EmployeeRepository } from '../repositories/EmployeeRepository.js';
-import type { Task, Employee, MaterialItem } from '../../shared/types.js';
+import type { Task, Employee, MaterialItem, CollaborationRecord } from '../../shared/types.js';
 import { getDb, persistDb } from '../config/database.js';
 
 export class TaskService {
@@ -108,5 +108,17 @@ export class TaskService {
 
   async updateTaskMaterials(taskId: string, materials: MaterialItem[]) {
     return this.taskRepository.updateMaterials(taskId, materials);
+  }
+
+  async addCollaborationRecord(taskId: string, type: CollaborationRecord['type'], content: string, createdBy: string) {
+    return this.taskRepository.addCollaborationRecord(taskId, type, content, createdBy);
+  }
+
+  async getCollaborationRecords(taskId: string) {
+    return this.taskRepository.getCollaborationRecords(taskId);
+  }
+
+  async deleteCollaborationRecord(taskId: string, recordId: string) {
+    return this.taskRepository.deleteCollaborationRecord(taskId, recordId);
   }
 }

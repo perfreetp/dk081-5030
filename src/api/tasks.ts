@@ -1,5 +1,5 @@
 import { request } from './client';
-import type { Task, MaterialItem, TimelineItem } from '../../shared/types.js';
+import type { Task, MaterialItem, TimelineItem, CollaborationRecord } from '../../shared/types.js';
 
 export const taskApi = {
   getTasks: () => {
@@ -65,6 +65,28 @@ export const taskApi = {
       url: `/tasks/${id}/timeline/${index}`,
       method: 'put',
       data: { completed }
+    });
+  },
+
+  getCollaborationRecords: (id: string) => {
+    return request<CollaborationRecord[]>({
+      url: `/tasks/${id}/collaboration`,
+      method: 'get'
+    });
+  },
+
+  addCollaborationRecord: (id: string, type: CollaborationRecord['type'], content: string) => {
+    return request<CollaborationRecord>({
+      url: `/tasks/${id}/collaboration`,
+      method: 'post',
+      data: { type, content }
+    });
+  },
+
+  deleteCollaborationRecord: (id: string, recordId: string) => {
+    return request<null>({
+      url: `/tasks/${id}/collaboration/${recordId}`,
+      method: 'delete'
     });
   }
 };

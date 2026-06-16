@@ -252,7 +252,7 @@ const Statistics: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="input-label">开始日期</label>
+              <label className="input-label">办结/退件起始</label>
               <input
                 type="date"
                 className="input"
@@ -261,7 +261,7 @@ const Statistics: React.FC = () => {
               />
             </div>
             <div>
-              <label className="input-label">结束日期</label>
+              <label className="input-label">办结/退件截止</label>
               <input
                 type="date"
                 className="input"
@@ -276,14 +276,20 @@ const Statistics: React.FC = () => {
               >
                 重置筛选
               </button>
+              <a
+                href={statisticsApi.getExportUrl(filter)}
+                className="btn-primary flex-1 text-center"
+              >
+                导出报表
+              </a>
             </div>
           </div>
           {(filter.city || filter.startDate || filter.endDate) && (
             <div className="mt-3 text-sm text-neutral-500">
               当前筛选：
               {filter.city && <span className="ml-2 badge badge-primary">城市：{filter.city}</span>}
-              {filter.startDate && <span className="ml-2 badge badge-primary">起始：{filter.startDate}</span>}
-              {filter.endDate && <span className="ml-2 badge badge-primary">截止：{filter.endDate}</span>}
+              {filter.startDate && <span className="ml-2 badge badge-primary">办结起始：{filter.startDate}</span>}
+              {filter.endDate && <span className="ml-2 badge badge-primary">办结截止：{filter.endDate}</span>}
             </div>
           )}
         </div>

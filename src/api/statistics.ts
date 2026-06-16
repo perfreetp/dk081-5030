@@ -60,5 +60,15 @@ export const statisticsApi = {
       url: `/statistics/rejection-reasons${params.toString() ? '?' + params.toString() : ''}`,
       method: 'get'
     });
+  },
+
+  getExportUrl: (filter?: StatisticsFilter) => {
+    const token = localStorage.getItem('token') || '';
+    const params = new URLSearchParams();
+    if (filter?.city) params.append('city', filter.city);
+    if (filter?.startDate) params.append('startDate', filter.startDate);
+    if (filter?.endDate) params.append('endDate', filter.endDate);
+    params.append('token', token);
+    return `/api/statistics/export?${params.toString()}`;
   }
 };

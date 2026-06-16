@@ -154,18 +154,24 @@ export class StatisticsService {
 
     for (const c of cities) {
       let cityEmployees = db.employees.filter(e => e.targetCity === c);
-      
+
+      let completedEmps = cityEmployees.filter(e => e.status === 'completed');
+      let returnedEmps = cityEmployees.filter(e => e.status === 'returned');
+
       if (startDate) {
-        cityEmployees = cityEmployees.filter(e => new Date(e.createdAt) >= new Date(startDate));
+        const start = new Date(startDate);
+        completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) >= start);
+        returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) >= start);
       }
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        cityEmployees = cityEmployees.filter(e => new Date(e.createdAt) <= end);
+        completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) <= end);
+        returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) <= end);
       }
 
-      const successCount = cityEmployees.filter(e => e.status === 'completed').length;
-      const failCount = cityEmployees.filter(e => e.status === 'returned').length;
+      const successCount = completedEmps.length;
+      const failCount = returnedEmps.length;
       const total = successCount + failCount;
       const rate = total > 0 ? Math.round((successCount / total) * 100) : 0;
 
@@ -267,5 +273,133 @@ export class StatisticsService {
 
   async getAvailableCities(): Promise<string[]> {
     return this.employeeRepository.getUniqueCities();
+  }
+
+  async getExportData(city?: string, startDate?: string, endDate?: string) {
+    const db = (await import('../config/database.js')).getDb();
+
+    let completedEmps = db.employees.filter(e => e.status === 'completed');
+    let returnedEmps = db.employees.filter(e => e.status === 'returned');
+
+    if (city) {
+      completedEmps = completedEmps.filter(e => e.targetCity === city);
+      returnedEmps = returnedEmps.filter(e => e.targetCity === city);
+    }
+
+    if (startDate) {
+      const start = new Date(startDate);
+      completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) >= start);
+      returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      completedEmps = completedEmps.filter(e => e.completedAt && new Date(e.completedAt) <= end);
+      returnedEmps = returnedEmps.filter(e => e.updatedAt && new Date(e.updatedAt) <= end);
+    }
+
+    const totalCompleted = completedEmps.length;
+    const totalReturned = returnedEmps.length;
+    const totalProcessed = totalCompleted + totalReturned;
+    const successRate = totalProcessed > 0 ? Math.round((totalCompleted / totalProcessed) * 100) : 0;
+
+    const completedWithDays = completedEmps.filter(e => e.completedAt);
+    let averageDays = 0;
+    if (completedWithDays.length > 0) {
+      const totalDays = completedWithDays.reduce((sum, e) => {
+        return sum + Math.ceil((new Date(e.completedAt!).getTime() - new Date(e.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      }, 0);
+      averageDays = Math.round(totalDays / completedWithDays.length);
+    }
+
+    const returnRecords = [...db.returnRecords];
+    const returnDetailList = returnedEmps.map(e => {
+      const reasons = returnRecords.filter(r => r.employeeId === e.id);
+      return {
+        name: e.name,
+        idCard: e.idCard,
+        targetCity: e.targetCity,
+        employeeType: e.employeeType,
+        returnedAt: e.updatedAt,
+        reasons: reasons.map(r => r.reason).join('；')
+      };
+    });
+
+    const cityMap = new Map<string, { completed: number; returned: number }>();
+    [...completedEmps, ...returnedEmps].forEach(e => {
+      const entry = cityMap.get(e.targetCity) || { completed: 0, returned: 0 };
+      if (e.status === 'completed') entry.completed++;
+      else entry.returned++;
+      cityMap.set(e.targetCity, entry);
+    });
+    const cityStats = Array.from(cityMap.entries()).map(([city, data]) => ({
+      city,
+      completed: data.completed,
+      returned: data.returned,
+      total: data.completed + data.returned,
+      rate: data.completed + data.returned > 0
+        ? Math.round((data.completed / (data.completed + data.returned)) * 100)
+        : 0
+    }));
+
+    const allMaterialTasks = db.tasks.filter(t => {
+      if (city && t.city !== city) return false;
+      return true;
+    });
+    const materialDeficiency: { taskCity: string; materialName: string; required: boolean; collected: boolean }[] = [];
+    allMaterialTasks.forEach(task => {
+      (task.materials || []).forEach(m => {
+        if (!m.collected) {
+          materialDeficiency.push({
+            taskCity: task.city,
+            materialName: m.name,
+            required: !m.optional,
+            collected: m.collected
+          });
+        }
+      });
+    });
+    const materialSummary = new Map<string, number>();
+    materialDeficiency.filter(m => m.required).forEach(m => {
+      materialSummary.set(m.materialName, (materialSummary.get(m.materialName) || 0) + 1);
+    });
+    const materialDeficiencyList = Array.from(materialSummary.entries())
+      .map(([name, count]) => ({ materialName: name, missingCount: count }))
+      .sort((a, b) => b.missingCount - a.missingCount);
+
+    const reasonMap = new Map<string, number>();
+    let filteredReturnRecords = returnRecords;
+    if (city) {
+      const cityEmpIds = [...completedEmps, ...returnedEmps].map(e => e.id);
+      filteredReturnRecords = filteredReturnRecords.filter(r => cityEmpIds.includes(r.employeeId));
+    }
+    if (startDate) {
+      filteredReturnRecords = filteredReturnRecords.filter(r => new Date(r.markedAt) >= new Date(startDate));
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filteredReturnRecords = filteredReturnRecords.filter(r => new Date(r.markedAt) <= end);
+    }
+    filteredReturnRecords.forEach(r => {
+      reasonMap.set(r.reason, (reasonMap.get(r.reason) || 0) + 1);
+    });
+    const rejectionReasons = Array.from(reasonMap.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      summary: {
+        totalCompleted,
+        totalReturned,
+        totalProcessed,
+        successRate,
+        averageDays
+      },
+      cityStats,
+      returnDetailList,
+      rejectionReasons,
+      materialDeficiencyList
+    };
   }
 }

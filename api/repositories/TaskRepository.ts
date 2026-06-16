@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, persistDb } from '../config/database.js';
-import type { Task, TaskStatus, MaterialItem, TimelineItem } from '../../shared/types.js';
+import type { Task, TaskStatus, MaterialItem, TimelineItem, CollaborationRecord } from '../../shared/types.js';
 
 const CITY_MATERIALS: Record<string, MaterialItem[]> = {
   'default': [
@@ -57,6 +57,7 @@ export class TaskRepository {
       progress: 0,
       materials,
       timeline: timeline.map(item => ({ ...item })),
+      collaborationRecords: [],
       createdAt: now,
       updatedAt: now
     };
@@ -168,13 +169,22 @@ export class TaskRepository {
     if (!task || !task.timeline[timelineIndex]) return null;
 
     const wasCompleted = task.progress === 100;
+    const isLastNode = timelineIndex === task.timeline.length - 1;
+    const today = new Date().toISOString().split('T')[0];
 
-    task.timeline[timelineIndex].completed = completed;
-    task.timeline[timelineIndex].dueDate = completed ? new Date().toISOString().split('T')[0] : '';
-    
+    if (completed && isLastNode) {
+      task.timeline.forEach((item, i) => {
+        item.completed = true;
+        if (!item.dueDate) item.dueDate = today;
+      });
+    } else {
+      task.timeline[timelineIndex].completed = completed;
+      task.timeline[timelineIndex].dueDate = completed ? today : '';
+    }
+
     const completedCount = task.timeline.filter(t => t.completed).length;
     task.progress = Math.round((completedCount / task.timeline.length) * 100);
-    
+
     const now = new Date().toISOString();
     if (task.progress === 100) {
       task.status = 'completed';
@@ -200,7 +210,7 @@ export class TaskRepository {
         });
       }
     }
-    
+
     task.updatedAt = now;
     persistDb(db);
     return task.timeline;
@@ -211,6 +221,52 @@ export class TaskRepository {
     const index = db.tasks.findIndex(t => t.id === id);
     if (index === -1) return false;
     db.tasks.splice(index, 1);
+    persistDb(db);
+    return true;
+  }
+
+  async addCollaborationRecord(taskId: string, type: CollaborationRecord['type'], content: string, createdBy: string): Promise<CollaborationRecord | null> {
+    const db = getDb();
+    const task = db.tasks.find(t => t.id === taskId);
+    if (!task) return null;
+
+    if (!task.collaborationRecords) {
+      task.collaborationRecords = [];
+    }
+
+    const record: CollaborationRecord = {
+      id: uuidv4(),
+      taskId,
+      type,
+      content,
+      createdBy,
+      createdAt: new Date().toISOString()
+    };
+
+    task.collaborationRecords.push(record);
+    task.updatedAt = new Date().toISOString();
+    persistDb(db);
+    return record;
+  }
+
+  async getCollaborationRecords(taskId: string): Promise<CollaborationRecord[]> {
+    const task = await this.findById(taskId);
+    if (!task || !task.collaborationRecords) return [];
+    return [...task.collaborationRecords].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  async deleteCollaborationRecord(taskId: string, recordId: string): Promise<boolean> {
+    const db = getDb();
+    const task = db.tasks.find(t => t.id === taskId);
+    if (!task || !task.collaborationRecords) return false;
+
+    const index = task.collaborationRecords.findIndex(r => r.id === recordId);
+    if (index === -1) return false;
+
+    task.collaborationRecords.splice(index, 1);
+    task.updatedAt = new Date().toISOString();
     persistDb(db);
     return true;
   }

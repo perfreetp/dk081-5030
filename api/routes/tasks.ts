@@ -238,4 +238,91 @@ router.put('/:id/timeline/:index', authMiddleware, async (req: AuthRequest, res)
   }
 });
 
+router.get('/:id/collaboration', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const records = await taskService.getCollaborationRecords(id);
+    
+    res.json({
+      code: 200,
+      message: '获取成功',
+      data: records
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Get collaboration records error:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器内部错误',
+      data: null
+    } as ApiResponse);
+  }
+});
+
+router.post('/:id/collaboration', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { type, content } = req.body;
+    
+    if (!type || !content) {
+      return res.status(400).json({
+        code: 400,
+        message: '类型和内容不能为空',
+        data: null
+      } as ApiResponse);
+    }
+
+    const createdBy = req.user?.name || '未知';
+    const record = await taskService.addCollaborationRecord(id, type, content, createdBy);
+    
+    if (!record) {
+      return res.status(404).json({
+        code: 404,
+        message: '任务不存在',
+        data: null
+      } as ApiResponse);
+    }
+    
+    res.json({
+      code: 200,
+      message: '添加成功',
+      data: record
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Add collaboration record error:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器内部错误',
+      data: null
+    } as ApiResponse);
+  }
+});
+
+router.delete('/:id/collaboration/:recordId', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { id, recordId } = req.params;
+    const success = await taskService.deleteCollaborationRecord(id, recordId);
+    
+    if (!success) {
+      return res.status(404).json({
+        code: 404,
+        message: '记录不存在',
+        data: null
+      } as ApiResponse);
+    }
+    
+    res.json({
+      code: 200,
+      message: '删除成功',
+      data: null
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Delete collaboration record error:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器内部错误',
+      data: null
+    } as ApiResponse);
+  }
+});
+
 export default router;

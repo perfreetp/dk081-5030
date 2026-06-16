@@ -4,16 +4,19 @@ import { taskApi } from '../../api/tasks.js';
 import { employeeApi } from '../../api/employees.js';
 import { StatusBadge, EmployeeTypeBadge } from '../../components/StatusBadge/index.jsx';
 import Modal from '../../components/Modal/index.jsx';
-import type { Task, Employee, MaterialItem, TimelineItem } from '../../../shared/types.js';
+import type { Task, Employee, MaterialItem, TimelineItem, CollaborationRecord } from '../../../shared/types.js';
 
 const Tasks: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<(Task & { employees: Employee[] }) | null>(null);
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [collaborationRecords, setCollaborationRecords] = useState<CollaborationRecord[]>([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [splitting, setSplitting] = useState(false);
+  const [newRecordType, setNewRecordType] = useState<CollaborationRecord['type']>('note');
+  const [newRecordContent, setNewRecordContent] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -50,10 +53,11 @@ const Tasks: React.FC = () => {
 
   const handleViewTask = async (task: Task) => {
     try {
-      const [taskRes, materialsRes, timelineRes] = await Promise.all([
+      const [taskRes, materialsRes, timelineRes, collabRes] = await Promise.all([
         taskApi.getTask(task.id),
         taskApi.getTaskMaterials(task.id),
-        taskApi.getTaskTimeline(task.id)
+        taskApi.getTaskTimeline(task.id),
+        taskApi.getCollaborationRecords(task.id)
       ]);
 
       if (taskRes.code === 200 && taskRes.data) {
@@ -65,6 +69,11 @@ const Tasks: React.FC = () => {
       if (timelineRes.code === 200 && timelineRes.data) {
         setTimeline(timelineRes.data);
       }
+      if (collabRes.code === 200 && collabRes.data) {
+        setCollaborationRecords(collabRes.data);
+      }
+      setNewRecordType('note');
+      setNewRecordContent('');
       setShowDetailModal(true);
     } catch (error) {
       console.error('加载任务详情失败', error);
@@ -131,6 +140,43 @@ const Tasks: React.FC = () => {
       total: required.length,
       percent: Math.round((collected / required.length) * 100)
     };
+  };
+
+  const handleAddCollaborationRecord = async () => {
+    if (!selectedTask || !newRecordContent.trim()) return;
+    try {
+      const res = await taskApi.addCollaborationRecord(selectedTask.id, newRecordType, newRecordContent.trim());
+      if (res.code === 200) {
+        setNewRecordContent('');
+        const collabRes = await taskApi.getCollaborationRecords(selectedTask.id);
+        if (collabRes.code === 200 && collabRes.data) {
+          setCollaborationRecords(collabRes.data);
+        }
+      }
+    } catch (error) {
+      console.error('添加协作记录失败', error);
+    }
+  };
+
+  const handleDeleteCollaborationRecord = async (recordId: string) => {
+    if (!selectedTask) return;
+    try {
+      const res = await taskApi.deleteCollaborationRecord(selectedTask.id, recordId);
+      if (res.code === 200) {
+        const collabRes = await taskApi.getCollaborationRecords(selectedTask.id);
+        if (collabRes.code === 200 && collabRes.data) {
+          setCollaborationRecords(collabRes.data);
+        }
+      }
+    } catch (error) {
+      console.error('删除协作记录失败', error);
+    }
+  };
+
+  const recordTypeConfig: Record<CollaborationRecord['type'], { label: string; icon: string; color: string }> = {
+    note: { label: '备注', icon: '📝', color: 'badge-primary' },
+    supplement: { label: '补充说明', icon: '📎', color: 'badge-warning' },
+    communication: { label: '沟通记录', icon: '📞', color: 'badge-success' }
   };
 
   const statusColor: Record<string, string> = {
@@ -394,6 +440,79 @@ const Tasks: React.FC = () => {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className="border-t border-neutral-200 pt-6">
+              <h4 className="font-semibold text-neutral-800 mb-4">💬 协作记录</h4>
+              <div className="mb-4">
+                <div className="flex gap-3 mb-3">
+                  {(['note', 'supplement', 'communication'] as const).map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setNewRecordType(type)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        newRecordType === type
+                          ? 'bg-primary-100 text-primary-700 border border-primary-300'
+                          : 'bg-neutral-100 text-neutral-600 border border-neutral-200 hover:bg-neutral-200'
+                      }`}
+                    >
+                      {recordTypeConfig[type].icon} {recordTypeConfig[type].label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <textarea
+                    value={newRecordContent}
+                    onChange={(e) => setNewRecordContent(e.target.value)}
+                    placeholder={
+                      newRecordType === 'note' ? '输入备注内容...' :
+                      newRecordType === 'supplement' ? '输入补充说明...' :
+                      '记录与经办机构的沟通内容...'
+                    }
+                    className="input flex-1 min-h-[60px] resize-y"
+                    rows={2}
+                  />
+                  <button
+                    onClick={handleAddCollaborationRecord}
+                    disabled={!newRecordContent.trim()}
+                    className="btn-primary self-end"
+                  >
+                    添加
+                  </button>
+                </div>
+              </div>
+              {collaborationRecords.length > 0 ? (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {collaborationRecords.map(record => {
+                    const config = recordTypeConfig[record.type];
+                    return (
+                      <div key={record.id} className="p-3 bg-neutral-50 rounded-lg border border-neutral-200">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <span>{config.icon}</span>
+                            <span className={`badge ${config.color}`}>{config.label}</span>
+                            <span className="text-xs text-neutral-500">
+                              {new Date(record.createdAt).toLocaleString('zh-CN')}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteCollaborationRecord(record.id)}
+                            className="text-neutral-400 hover:text-danger-500 text-sm transition-colors"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap">{record.content}</p>
+                        <p className="mt-1 text-xs text-neutral-400">by {record.createdBy}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-neutral-400 text-sm">
+                  暂无协作记录，可添加备注、补充说明或沟通记录
+                </div>
+              )}
             </div>
           </div>
         )}
