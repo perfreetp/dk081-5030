@@ -45,6 +45,14 @@ export const taskApi = {
     });
   },
 
+  updateTaskMaterials: (id: string, materials: MaterialItem[]) => {
+    return request<MaterialItem[]>({
+      url: `/tasks/${id}/materials`,
+      method: 'put',
+      data: { materials }
+    });
+  },
+
   getTaskTimeline: (id: string) => {
     return request<TimelineItem[]>({
       url: `/tasks/${id}/timeline`,

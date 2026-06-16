@@ -1,25 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { statisticsApi } from '../../api/statistics.js';
+import { statisticsApi, type StatisticsFilter } from '../../api/statistics.js';
 import type { SuccessRateData, AverageTimeData, RejectionReasonData } from '../../../shared/types.js';
 
 const Statistics: React.FC = () => {
   const [successRateData, setSuccessRateData] = useState<SuccessRateData[]>([]);
   const [averageTimeData, setAverageTimeData] = useState<AverageTimeData[]>([]);
   const [rejectionData, setRejectionData] = useState<RejectionReasonData[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<StatisticsFilter>({
+    city: '',
+    startDate: '',
+    endDate: ''
+  });
+
+  useEffect(() => {
+    loadCities();
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [filter]);
+
+  const loadCities = async () => {
+    try {
+      const res = await statisticsApi.getCities();
+      if (res.code === 200 && res.data) {
+        setCities(res.data);
+      }
+    } catch (error) {
+      console.error('加载城市列表失败', error);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [successRes, timeRes, rejectionRes] = await Promise.all([
-        statisticsApi.getSuccessRate(),
-        statisticsApi.getAverageTime(),
-        statisticsApi.getRejectionReasons()
+        statisticsApi.getSuccessRate(filter),
+        statisticsApi.getAverageTime(filter),
+        statisticsApi.getRejectionReasons(filter)
       ]);
 
       if (successRes.code === 200 && successRes.data) {
@@ -36,6 +57,10 @@ const Statistics: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResetFilter = () => {
+    setFilter({ city: '', startDate: '', endDate: '' });
   };
 
   const successRateOption = {
@@ -205,9 +230,63 @@ const Statistics: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-800 mb-2">统计分析</h1>
-        <p className="text-neutral-500">汇总各地区办理成功率、平均耗时和高频退件原因</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-800 mb-2">统计分析</h1>
+          <p className="text-neutral-500">汇总各地区办理成功率、平均耗时和高频退件原因</p>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-body">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div>
+              <label className="input-label">城市</label>
+              <select
+                className="input"
+                value={filter.city || ''}
+                onChange={(e) => setFilter({ ...filter, city: e.target.value || undefined })}
+              >
+                <option value="">全部城市</option>
+                {cities.map(city => <option key={city} value={city}>{city}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="input-label">开始日期</label>
+              <input
+                type="date"
+                className="input"
+                value={filter.startDate || ''}
+                onChange={(e) => setFilter({ ...filter, startDate: e.target.value || undefined })}
+              />
+            </div>
+            <div>
+              <label className="input-label">结束日期</label>
+              <input
+                type="date"
+                className="input"
+                value={filter.endDate || ''}
+                onChange={(e) => setFilter({ ...filter, endDate: e.target.value || undefined })}
+              />
+            </div>
+            <div className="md:col-span-2 flex gap-3">
+              <button
+                onClick={handleResetFilter}
+                className="btn-secondary flex-1"
+              >
+                重置筛选
+              </button>
+            </div>
+          </div>
+          {(filter.city || filter.startDate || filter.endDate) && (
+            <div className="mt-3 text-sm text-neutral-500">
+              当前筛选：
+              {filter.city && <span className="ml-2 badge badge-primary">城市：{filter.city}</span>}
+              {filter.startDate && <span className="ml-2 badge badge-primary">起始：{filter.startDate}</span>}
+              {filter.endDate && <span className="ml-2 badge badge-primary">截止：{filter.endDate}</span>}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

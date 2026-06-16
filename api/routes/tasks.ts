@@ -150,6 +150,44 @@ router.get('/:id/materials', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
+router.put('/:id/materials', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { materials } = req.body;
+    
+    if (!Array.isArray(materials)) {
+      return res.status(400).json({
+        code: 400,
+        message: '材料数据格式错误',
+        data: null
+      } as ApiResponse);
+    }
+
+    const updatedMaterials = await taskService.updateTaskMaterials(id, materials);
+    
+    if (!updatedMaterials) {
+      return res.status(404).json({
+        code: 404,
+        message: '任务不存在',
+        data: null
+      } as ApiResponse);
+    }
+    
+    res.json({
+      code: 200,
+      message: '材料状态更新成功',
+      data: updatedMaterials
+    } as ApiResponse);
+  } catch (error) {
+    console.error('Update task materials error:', error);
+    res.status(500).json({
+      code: 500,
+      message: '服务器内部错误',
+      data: null
+    } as ApiResponse);
+  }
+});
+
 router.get('/:id/timeline', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;

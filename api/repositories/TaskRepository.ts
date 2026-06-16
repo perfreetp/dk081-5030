@@ -81,7 +81,52 @@ export class TaskRepository {
   }
 
   async updateStatus(id: string, status: TaskStatus): Promise<Task | null> {
-    return this.update(id, { status });
+    const db = getDb();
+    const task = db.tasks.find(t => t.id === id);
+    if (!task) return null;
+
+    task.status = status;
+    const now = new Date().toISOString();
+
+    if (status === 'completed') {
+      task.progress = 100;
+      task.timeline.forEach(item => {
+        item.completed = true;
+        if (!item.dueDate) item.dueDate = now.split('T')[0];
+      });
+      if (task.employeeIds && task.employeeIds.length > 0) {
+        task.employeeIds.forEach(empId => {
+          const emp = db.employees.find(e => e.id === empId);
+          if (emp && emp.status !== 'returned') {
+            emp.status = 'completed';
+            emp.completedAt = now;
+            emp.updatedAt = now;
+          }
+        });
+      }
+    } else if (status === 'in_progress') {
+      if (task.progress === 0) {
+        const completedCount = task.timeline.filter(t => t.completed).length;
+        if (completedCount === 0) {
+          task.timeline[0].completed = true;
+          task.timeline[0].dueDate = now.split('T')[0];
+          task.progress = Math.round((1 / task.timeline.length) * 100);
+        }
+      }
+      if (task.employeeIds && task.employeeIds.length > 0) {
+        task.employeeIds.forEach(empId => {
+          const emp = db.employees.find(e => e.id === empId);
+          if (emp && emp.status === 'validated') {
+            emp.status = 'in_progress';
+            emp.updatedAt = now;
+          }
+        });
+      }
+    }
+
+    task.updatedAt = now;
+    persistDb(db);
+    return task;
   }
 
   async updateProgress(id: string, progress: number): Promise<Task | null> {
@@ -99,6 +144,17 @@ export class TaskRepository {
   async getMaterials(taskId: string): Promise<MaterialItem[]> {
     const task = await this.findById(taskId);
     return task?.materials || [];
+  }
+
+  async updateMaterials(taskId: string, materials: MaterialItem[]): Promise<MaterialItem[] | null> {
+    const db = getDb();
+    const task = db.tasks.find(t => t.id === taskId);
+    if (!task) return null;
+
+    task.materials = materials;
+    task.updatedAt = new Date().toISOString();
+    persistDb(db);
+    return task.materials;
   }
 
   async getTimeline(taskId: string): Promise<TimelineItem[]> {

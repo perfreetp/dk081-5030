@@ -1,6 +1,7 @@
 import { TaskRepository } from '../repositories/TaskRepository.js';
 import { EmployeeRepository } from '../repositories/EmployeeRepository.js';
-import type { Task, Employee } from '../../shared/types.js';
+import type { Task, Employee, MaterialItem } from '../../shared/types.js';
+import { getDb, persistDb } from '../config/database.js';
 
 export class TaskService {
   private taskRepository: TaskRepository;
@@ -11,13 +12,34 @@ export class TaskService {
     this.employeeRepository = new EmployeeRepository();
   }
 
+  private refreshTaskEmployees(task: Task): Task {
+    const db = getDb();
+    const validStatuses = ['validated', 'in_progress', 'completed'] as const;
+    const validEmployeeIds = task.employeeIds.filter(id => {
+      const emp = db.employees.find(e => e.id === id);
+      return emp && validStatuses.includes(emp.status as any);
+    });
+
+    if (validEmployeeIds.length !== task.employeeIds.length || task.employeeCount !== validEmployeeIds.length) {
+      task.employeeIds = validEmployeeIds;
+      task.employeeCount = validEmployeeIds.length;
+      task.updatedAt = new Date().toISOString();
+      persistDb(db);
+    }
+
+    return task;
+  }
+
   async getAllTasks(): Promise<Task[]> {
-    return this.taskRepository.findAll();
+    const tasks = await this.taskRepository.findAll();
+    return tasks.map(t => this.refreshTaskEmployees(t));
   }
 
   async getTaskByCity(city: string): Promise<Task & { employees: Employee[] } | null> {
     const task = await this.taskRepository.findByCity(city);
     if (!task) return null;
+
+    this.refreshTaskEmployees(task);
 
     const employees = await this.employeeRepository.findByTargetCity(city);
     const eligibleEmployees = employees.filter(e => 
@@ -31,9 +53,12 @@ export class TaskService {
     const task = await this.taskRepository.findById(id);
     if (!task) return null;
 
+    this.refreshTaskEmployees(task);
+
     const allEmployees = await this.employeeRepository.findByTargetCity(task.city);
     const eligibleEmployees = allEmployees.filter(e => 
-      task.employeeIds.includes(e.id)
+      task.employeeIds.includes(e.id) && 
+      (e.status === 'validated' || e.status === 'in_progress' || e.status === 'completed')
     );
     return { ...task, employees: eligibleEmployees };
   }
@@ -79,5 +104,9 @@ export class TaskService {
 
   async getTaskTimeline(taskId: string) {
     return this.taskRepository.getTimeline(taskId);
+  }
+
+  async updateTaskMaterials(taskId: string, materials: MaterialItem[]) {
+    return this.taskRepository.updateMaterials(taskId, materials);
   }
 }

@@ -146,20 +146,31 @@ export class StatisticsService {
     });
   }
 
-  async getSuccessRateData(): Promise<SuccessRateData[]> {
+  async getSuccessRateData(city?: string, startDate?: string, endDate?: string): Promise<SuccessRateData[]> {
     const db = (await import('../config/database.js')).getDb();
-    const cities = await this.employeeRepository.getUniqueCities();
+    const allCities = await this.employeeRepository.getUniqueCities();
+    const cities = city ? [city] : allCities;
     const result: SuccessRateData[] = [];
 
-    for (const city of cities) {
-      const cityEmployees = db.employees.filter(e => e.targetCity === city);
+    for (const c of cities) {
+      let cityEmployees = db.employees.filter(e => e.targetCity === c);
+      
+      if (startDate) {
+        cityEmployees = cityEmployees.filter(e => new Date(e.createdAt) >= new Date(startDate));
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        cityEmployees = cityEmployees.filter(e => new Date(e.createdAt) <= end);
+      }
+
       const successCount = cityEmployees.filter(e => e.status === 'completed').length;
       const failCount = cityEmployees.filter(e => e.status === 'returned').length;
       const total = successCount + failCount;
       const rate = total > 0 ? Math.round((successCount / total) * 100) : 0;
 
       result.push({
-        city,
+        city: c,
         successCount,
         failCount,
         rate,
@@ -169,19 +180,29 @@ export class StatisticsService {
     return result.sort((a, b) => b.rate - a.rate);
   }
 
-  async getAverageTimeData(): Promise<AverageTimeData[]> {
+  async getAverageTimeData(city?: string, startDate?: string, endDate?: string): Promise<AverageTimeData[]> {
     const db = (await import('../config/database.js')).getDb();
-    const cities = await this.employeeRepository.getUniqueCities();
+    const allCities = await this.employeeRepository.getUniqueCities();
+    const cities = city ? [city] : allCities;
     const result: AverageTimeData[] = [];
 
-    for (const city of cities) {
-      const cityEmployees = db.employees.filter(
-        e => e.targetCity === city && e.status === 'completed'
+    for (const c of cities) {
+      let cityEmployees = db.employees.filter(
+        e => e.targetCity === c && e.status === 'completed'
       );
+
+      if (startDate) {
+        cityEmployees = cityEmployees.filter(e => e.completedAt && new Date(e.completedAt) >= new Date(startDate));
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        cityEmployees = cityEmployees.filter(e => e.completedAt && new Date(e.completedAt) <= end);
+      }
 
       if (cityEmployees.length === 0) {
         result.push({
-          city,
+          city: c,
           days: 0,
         });
         continue;
@@ -197,7 +218,7 @@ export class StatisticsService {
 
       if (daysList.length === 0) {
         result.push({
-          city,
+          city: c,
           days: 0,
         });
         continue;
@@ -206,7 +227,7 @@ export class StatisticsService {
       const days = Math.round(daysList.reduce((a, b) => a + b, 0) / daysList.length);
 
       result.push({
-        city,
+        city: c,
         days,
       });
     }
@@ -214,11 +235,37 @@ export class StatisticsService {
     return result.sort((a, b) => a.days - b.days);
   }
 
-  async getRejectionReasons(): Promise<RejectionReasonData[]> {
-    const reasons = await this.returnRecordRepository.getRejectionReasons();
-    return reasons.map(r => ({
-      reason: r.reason,
-      count: r.count,
-    }));
+  async getRejectionReasons(city?: string, startDate?: string, endDate?: string): Promise<RejectionReasonData[]> {
+    const db = (await import('../config/database.js')).getDb();
+    const reasonMap = new Map<string, number>();
+
+    let records = [...db.returnRecords];
+    
+    if (city) {
+      const cityEmployeeIds = db.employees.filter(e => e.targetCity === city).map(e => e.id);
+      records = records.filter(r => cityEmployeeIds.includes(r.employeeId));
+    }
+
+    if (startDate) {
+      records = records.filter(r => new Date(r.markedAt) >= new Date(startDate));
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      records = records.filter(r => new Date(r.markedAt) <= end);
+    }
+
+    records.forEach(r => {
+      const count = reasonMap.get(r.reason) || 0;
+      reasonMap.set(r.reason, count + 1);
+    });
+
+    return Array.from(reasonMap.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  async getAvailableCities(): Promise<string[]> {
+    return this.employeeRepository.getUniqueCities();
   }
 }

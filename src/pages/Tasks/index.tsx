@@ -77,7 +77,14 @@ const Tasks: React.FC = () => {
       if (response.code === 200) {
         loadTasks();
         if (selectedTask?.id === taskId && response.data) {
-          setSelectedTask({ ...selectedTask, ...response.data });
+          const [taskRes, materialsRes, timelineRes] = await Promise.all([
+            taskApi.getTask(taskId),
+            taskApi.getTaskMaterials(taskId),
+            taskApi.getTaskTimeline(taskId)
+          ]);
+          if (taskRes.code === 200 && taskRes.data) setSelectedTask(taskRes.data);
+          if (materialsRes.code === 200 && materialsRes.data) setMaterials(materialsRes.data);
+          if (timelineRes.code === 200 && timelineRes.data) setTimeline(timelineRes.data);
         }
       }
     } catch (error) {
@@ -91,10 +98,39 @@ const Tasks: React.FC = () => {
       const response = await taskApi.updateTimelineItem(selectedTask.id, index, completed);
       if (response.code === 200 && response.data) {
         setTimeline(response.data);
+        const taskRes = await taskApi.getTask(selectedTask.id);
+        if (taskRes.code === 200 && taskRes.data) {
+          setSelectedTask(taskRes.data);
+        }
+        loadTasks();
       }
     } catch (error) {
       console.error('更新时间线失败', error);
     }
+  };
+
+  const handleToggleMaterial = async (index: number, checked: boolean) => {
+    if (!selectedTask) return;
+    const newMaterials = [...materials];
+    newMaterials[index].collected = checked;
+    setMaterials(newMaterials);
+    
+    try {
+      await taskApi.updateTaskMaterials(selectedTask.id, newMaterials);
+    } catch (error) {
+      console.error('保存材料状态失败', error);
+    }
+  };
+
+  const getMaterialProgress = () => {
+    const required = materials.filter(m => !m.optional);
+    if (required.length === 0) return { collected: 0, total: 0, percent: 0 };
+    const collected = required.filter(m => m.collected).length;
+    return {
+      collected,
+      total: required.length,
+      percent: Math.round((collected / required.length) * 100)
+    };
   };
 
   const statusColor: Record<string, string> = {
@@ -163,17 +199,29 @@ const Tasks: React.FC = () => {
                   <StatusBadge status={task.status === 'pending' ? 'pending' : task.status === 'in_progress' ? 'in_progress' : 'completed'} />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-4 gap-3 mb-4">
                   <div className="text-center p-3 bg-neutral-50 rounded-lg">
                     <p className="text-2xl font-bold text-neutral-800">{task.employeeCount}</p>
                     <p className="text-xs text-neutral-500">人数</p>
                   </div>
                   <div className="text-center p-3 bg-neutral-50 rounded-lg">
-                    <p className="text-2xl font-bold text-primary-600">{task.materials?.length || 0}</p>
-                    <p className="text-xs text-neutral-500">材料项</p>
+                    <p className="text-2xl font-bold text-primary-600">{task.progress}%</p>
+                    <p className="text-xs text-neutral-500">进度</p>
                   </div>
                   <div className="text-center p-3 bg-neutral-50 rounded-lg">
-                    <p className="text-2xl font-bold text-warning-600">{task.timeline?.length || 0}</p>
+                    <p className="text-2xl font-bold text-success-600">
+                      {(task.materials || []).filter(m => !m.optional && m.collected).length}
+                      /
+                      {(task.materials || []).filter(m => !m.optional).length}
+                    </p>
+                    <p className="text-xs text-neutral-500">材料</p>
+                  </div>
+                  <div className="text-center p-3 bg-neutral-50 rounded-lg">
+                    <p className="text-2xl font-bold text-warning-600">
+                      {(task.timeline || []).filter(t => t.completed).length}
+                      /
+                      {task.timeline?.length || 0}
+                    </p>
                     <p className="text-xs text-neutral-500">节点</p>
                   </div>
                 </div>
@@ -270,28 +318,46 @@ const Tasks: React.FC = () => {
 
               <div className="space-y-6">
                 <div>
-                  <h4 className="font-semibold text-neutral-800 mb-4">📋 所需材料</h4>
-                  <div className="space-y-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-semibold text-neutral-800">📋 材料收集进度</h4>
+                    <span className="text-sm text-neutral-500">
+                      必需材料 {getMaterialProgress().collected}/{getMaterialProgress().total} ({getMaterialProgress().percent}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-neutral-200 rounded-full h-2 mb-4">
+                    <div 
+                      className={`h-2 rounded-full transition-all ${getMaterialProgress().percent === 100 ? 'bg-success-500' : 'bg-primary-500'}`}
+                      style={{ width: `${getMaterialProgress().percent}%` }}
+                    />
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
                     {materials.map((item, index) => (
-                      <div key={index} className="flex items-start gap-3 p-3 bg-neutral-50 rounded-lg">
+                      <div 
+                        key={index} 
+                        className={`flex items-start gap-3 p-3 rounded-lg transition-colors ${
+                          item.collected 
+                            ? 'bg-success-50 border border-success-200' 
+                            : item.optional 
+                              ? 'bg-neutral-50' 
+                              : 'bg-neutral-50 border border-neutral-200'
+                        }`}
+                      >
                         <input
                           type="checkbox"
                           checked={item.collected}
-                          onChange={(e) => {
-                            const newMaterials = [...materials];
-                            newMaterials[index].collected = e.target.checked;
-                            setMaterials(newMaterials);
-                          }}
+                          onChange={(e) => handleToggleMaterial(index, e.target.checked)}
                           className="mt-1 rounded border-neutral-300"
                         />
                         <div className="flex-1">
-                          <p className="font-medium text-neutral-800">{item.name}</p>
+                          <p className={`font-medium ${item.collected ? 'text-success-700 line-through' : 'text-neutral-800'}`}>
+                            {item.name}
+                          </p>
                           {item.description && (
                             <p className="text-sm text-neutral-500">{item.description}</p>
                           )}
                         </div>
-                        <span className={`badge ${item.optional ? 'badge-neutral' : 'badge-danger'}`}>
-                          {item.optional ? '可选' : '必需'}
+                        <span className={`badge ${item.optional ? 'badge-neutral' : (item.collected ? 'badge-success' : 'badge-danger')}`}>
+                          {item.optional ? '可选' : (item.collected ? '已收集' : '必需')}
                         </span>
                       </div>
                     ))}
